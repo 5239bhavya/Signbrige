@@ -13,7 +13,7 @@ import collections
 import speech_recognition as sr
 import mediapipe as mp
 
-app = FastAPI(title="SignBridge Self-Contained Word AI Backend")
+app = FastAPI(title="SignBridge High-Accuracy Self-Contained AI Backend")
 
 app.add_middleware(
     CORSMiddleware,
@@ -26,8 +26,6 @@ app.add_middleware(
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ISL_GIFS_DIR = os.path.join(BASE_DIR, "ISL_Gifs")
 LETTERS_DIR = os.path.join(BASE_DIR, "letters")
-MODEL_PATH = os.path.join(BASE_DIR, "Model", "keras_model.h5")
-LABELS_PATH = os.path.join(BASE_DIR, "Model", "labels.txt")
 
 if os.path.exists(ISL_GIFS_DIR):
     app.mount("/ISL_Gifs", StaticFiles(directory=ISL_GIFS_DIR), name="ISL_Gifs")
@@ -39,13 +37,12 @@ mp_hands = mp.solutions.hands
 hands_detector_mp = mp_hands.Hands(
     static_image_mode=False,
     max_num_hands=2,
-    min_detection_confidence=0.6,
-    min_tracking_confidence=0.5
+    min_detection_confidence=0.7,
+    min_tracking_confidence=0.7
 )
 
 landmark_history = collections.deque(maxlen=15)
 
-# Rich Synonym Mapping to ISL GIFs
 SYNONYM_MAP = {
     "hi": "hello.gif",
     "hello": "hello.gif",
@@ -81,80 +78,110 @@ SYNONYM_MAP = {
     "don't worry": "dont worry.gif",
 }
 
-def classify_comprehensive_gesture(landmarks_list, landmark_history_seq):
+def calculate_angle(p1, p2, p3):
+    """Calculates 3D joint bending angle in degrees."""
+    v1 = np.array([p1.x - p2.x, p1.y - p2.y, p1.z - p2.z])
+    v2 = np.array([p3.x - p2.x, p3.y - p2.y, p3.z - p2.z])
+    norm_v1 = np.linalg.norm(v1)
+    norm_v2 = np.linalg.norm(v2)
+    if norm_v1 == 0 or norm_v2 == 0:
+        return 0.0
+    cosine = np.dot(v1, v2) / (norm_v1 * norm_v2)
+    angle = np.arccos(np.clip(cosine, -1.0, 1.0))
+    return np.degrees(angle)
+
+def classify_high_accuracy_gesture(landmarks_list, landmark_history_seq):
     if not landmarks_list or len(landmarks_list) < 21:
         return None
 
     wrist = landmarks_list[0]
+
+    # 1. Scale-Invariant Normalization relative to Wrist and Bounding Box
+    xs = [lm.x for lm in landmarks_list]
+    ys = [lm.y for lm in landmarks_list]
+    bbox_scale = math.hypot(max(xs) - min(xs), max(ys) - min(ys))
+    if bbox_scale == 0:
+        bbox_scale = 1.0
+
+    # 2. Joint Bending Angles
+    index_angle = calculate_angle(landmarks_list[5], landmarks_list[6], landmarks_list[8])
+    middle_angle = calculate_angle(landmarks_list[9], landmarks_list[10], landmarks_list[12])
+    ring_angle = calculate_angle(landmarks_list[13], landmarks_list[14], landmarks_list[16])
+    pinky_angle = calculate_angle(landmarks_list[17], landmarks_list[18], landmarks_list[20])
+
+    # Extended State Thresholds
+    index_ext = index_angle > 140
+    middle_ext = middle_angle > 140
+    ring_ext = ring_angle > 140
+    pinky_ext = pinky_angle > 140
+
+    thumb_mcp = landmarks_list[2]
     thumb_tip = landmarks_list[4]
-    thumb_ip = landmarks_list[3]
+    thumb_ext = math.hypot(thumb_tip.x - landmarks_list[5].x, thumb_tip.y - landmarks_list[5].y) / bbox_scale > 0.35
 
-    index_tip = landmarks_list[8]
-    index_pip = landmarks_list[6]
-    index_mcp = landmarks_list[5]
+    # Finger Tip Distances
+    t_index_dist = math.hypot(thumb_tip.x - landmarks_list[8].x, thumb_tip.y - landmarks_list[8].y) / bbox_scale
+    t_middle_dist = math.hypot(thumb_tip.x - landmarks_list[12].x, thumb_tip.y - landmarks_list[12].y) / bbox_scale
+    t_ring_dist = math.hypot(thumb_tip.x - landmarks_list[16].x, thumb_tip.y - landmarks_list[16].y) / bbox_scale
+    t_pinky_dist = math.hypot(thumb_tip.x - landmarks_list[20].x, thumb_tip.y - landmarks_list[20].y) / bbox_scale
 
-    middle_tip = landmarks_list[12]
-    middle_pip = landmarks_list[10]
-
-    ring_tip = landmarks_list[16]
-    ring_pip = landmarks_list[14]
-
-    pinky_tip = landmarks_list[20]
-    pinky_pip = landmarks_list[18]
+    thumb_up = thumb_tip.y < landmarks_list[3].y and thumb_tip.y < landmarks_list[5].y
+    thumb_down = thumb_tip.y > landmarks_list[3].y and thumb_tip.y > landmarks_list[5].y
 
     hand_y = wrist.y
 
-    index_ext = index_tip.y < index_pip.y
-    middle_ext = middle_tip.y < middle_pip.y
-    ring_ext = ring_tip.y < ring_pip.y
-    pinky_ext = pinky_tip.y < pinky_pip.y
-    thumb_ext = math.hypot(thumb_tip.x - index_mcp.x, thumb_tip.y - index_mcp.y) > 0.12
-
-    t_index_dist = math.hypot(thumb_tip.x - index_tip.x, thumb_tip.y - index_tip.y)
-    t_middle_dist = math.hypot(thumb_tip.x - middle_tip.x, thumb_tip.y - middle_tip.y)
-
-    thumb_up = thumb_tip.y < thumb_ip.y and thumb_tip.y < index_mcp.y
-    thumb_down = thumb_tip.y > thumb_ip.y and thumb_tip.y > index_mcp.y
-
+    # ZONE A: Forehead Position (hand_y < 0.30)
     if hand_y < 0.30:
         if index_ext and not middle_ext and not ring_ext and not pinky_ext:
             return "Learn"
         if index_ext and pinky_ext and not middle_ext and not ring_ext:
             return "Why"
 
+    # ZONE B: Mouth/Chin Position (0.30 <= hand_y < 0.48)
     if 0.30 <= hand_y < 0.48:
-        if t_index_dist < 0.07 and t_middle_dist < 0.08 and not index_ext:
+        max_pinch_dist = max(t_index_dist, t_middle_dist)
+        if max_pinch_dist < 0.18 and not index_ext:
             return "Food"
         if index_ext and middle_ext and ring_ext and not pinky_ext:
             return "Water"
         if index_ext and not middle_ext and not ring_ext:
             return "Who"
 
+    # ZONE C: Chest Position (0.48 <= hand_y < 0.78)
     if 0.48 <= hand_y < 0.78:
         if pinky_ext and thumb_ext and not index_ext and not middle_ext and not ring_ext:
             return "Call Me"
 
+    # GESTURES & WORD PATTERNS
+    # 1. "I Love You" -> Thumb, Index, Pinky extended
     if index_ext and pinky_ext and not middle_ext and not ring_ext and thumb_ext:
         return "I Love You"
 
+    # 2. "Victory" -> Index & Middle extended
     if index_ext and middle_ext and not ring_ext and not pinky_ext:
         return "Victory"
 
-    if t_index_dist < 0.08 and middle_ext and ring_ext and pinky_ext:
+    # 3. "Okay" -> Thumb & Index tips touching, 3 fingers up
+    if t_index_dist < 0.12 and middle_ext and ring_ext and pinky_ext:
         return "Okay"
 
+    # 4. "Yes" -> Thumbs Up
     if thumb_up and not index_ext and not middle_ext and not ring_ext and not pinky_ext:
         return "Yes"
 
+    # 5. "No" -> Thumbs Down
     if thumb_down and not index_ext and not middle_ext and not ring_ext and not pinky_ext:
         return "No"
 
+    # 6. "Cool" -> Index & Pinky extended
     if index_ext and pinky_ext and not middle_ext and not ring_ext:
         return "Cool"
 
+    # 7. "Point" -> Index extended
     if index_ext and not middle_ext and not ring_ext and not pinky_ext:
         return "Point"
 
+    # 8. MOTION SEQUENCE ANALYSIS (Across 15 frames)
     if len(landmark_history_seq) >= 5:
         first_frame = landmark_history_seq[0]
         last_frame = landmark_history_seq[-1]
@@ -164,13 +191,13 @@ def classify_comprehensive_gesture(landmarks_list, landmark_history_seq):
         dx = last_frame[0].x - first_frame[0].x
 
         if index_ext and middle_ext and ring_ext and pinky_ext:
-            if total_move > 0.18 and abs(dx) > 0.1:
+            if total_move > 0.15 and abs(dx) > 0.08:
                 return "Hello"
-            if total_move > 0.18 and dy > 0.12:
+            if total_move > 0.15 and dy > 0.10:
                 return "Thank You"
-            if total_move > 0.18 and dy < -0.12:
+            if total_move > 0.15 and dy < -0.10:
                 return "Good Morning"
-            if total_move < 0.08:
+            if total_move < 0.06:
                 return "Stop"
 
     return None
@@ -188,7 +215,7 @@ def predict_sign_image(img: np.ndarray) -> dict:
             landmarks_list = primary_hand.landmark
             landmark_history.append(landmarks_list)
 
-            detected_sign = classify_comprehensive_gesture(landmarks_list, list(landmark_history))
+            detected_sign = classify_high_accuracy_gesture(landmarks_list, list(landmark_history))
             if detected_sign:
                 return {"label": detected_sign, "type": "word", "status": "success"}
             else:
@@ -206,7 +233,6 @@ def find_isl_gif_or_letter(clean_text: str):
         clean_text = clean_text.replace(c, "")
     clean_text = clean_text.strip().lower()
 
-    # 1. Direct Synonym Check
     if clean_text in SYNONYM_MAP:
         mapped_gif = SYNONYM_MAP[clean_text]
         if os.path.exists(os.path.join(ISL_GIFS_DIR, mapped_gif)):
@@ -217,7 +243,6 @@ def find_isl_gif_or_letter(clean_text: str):
                 "recognized_text": clean_text
             }
 
-    # 2. Exact Filename Check
     gif_file = f"{clean_text}.gif"
     gif_path = os.path.join(ISL_GIFS_DIR, gif_file)
     if os.path.exists(gif_path):
@@ -228,7 +253,6 @@ def find_isl_gif_or_letter(clean_text: str):
             "recognized_text": clean_text
         }
 
-    # 3. Substring / Word Match in ISL_GIFS
     words = clean_text.split()
     for w in words:
         if w in SYNONYM_MAP and os.path.exists(os.path.join(ISL_GIFS_DIR, SYNONYM_MAP[w])):
@@ -248,7 +272,6 @@ def find_isl_gif_or_letter(clean_text: str):
                 "recognized_text": clean_text
             }
 
-    # Default to Hello GIF animation
     return {
         "status": "gif",
         "path": "ISL_Gifs/hello.gif",
@@ -261,7 +284,7 @@ def find_isl_gif_or_letter(clean_text: str):
 @app.get("/")
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "service": "SignBridge Self-Contained Word AI Backend"}
+    return {"status": "ok", "service": "SignBridge High-Accuracy Self-Contained Backend"}
 
 @app.post("/predict-letter/")
 async def predict_letter(file: UploadFile = File(...)):
@@ -341,5 +364,5 @@ async def voice_to_isl(file: UploadFile = File(...)):
         return JSONResponse(status_code=500, content={"message": f"Server error: {e}"})
 
 if __name__ == "__main__":
-    print("🚀 Starting SignBridge Self-Contained Backend Server on port 5000...")
+    print("🚀 Starting SignBridge High-Accuracy Backend Server on port 5000...")
     uvicorn.run(app, host="0.0.0.0", port=5000)

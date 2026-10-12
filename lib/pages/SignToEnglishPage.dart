@@ -76,7 +76,7 @@ class _SignToEnglishPageState extends State<SignToEnglishPage>
       await _cameraController?.dispose();
       _cameraController = CameraController(
         camera,
-        ResolutionPreset.medium,
+        ResolutionPreset.high,
         enableAudio: false,
         imageFormatGroup: ImageFormatGroup.jpeg,
       );
@@ -268,7 +268,14 @@ class _SignToEnglishPageState extends State<SignToEnglishPage>
               children: [
                 if (previewReady)
                   SizedBox.expand(
-                    child: CameraPreview(_cameraController!),
+                    child: FittedBox(
+                      fit: BoxFit.cover,
+                      child: SizedBox(
+                        width: _cameraController!.value.previewSize!.height,
+                        height: _cameraController!.value.previewSize!.width,
+                        child: CameraPreview(_cameraController!),
+                      ),
+                    ),
                   ),
                 SafeArea(
                   child: Align(
