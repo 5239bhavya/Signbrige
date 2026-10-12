@@ -8,6 +8,7 @@ import 'package:http_parser/http_parser.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../config/api_config.dart';
 import '../services/offline_sign_predictor.dart';
+import '../services/usage_tracker.dart';
 import 'MyBottomNav.dart';
 
 class SignToEnglishPage extends StatefulWidget {
@@ -129,6 +130,7 @@ class _SignToEnglishPageState extends State<SignToEnglishPage>
 
             if (_consecutiveCount >= 2) {
               _consecutiveCount = 0;
+              UsageTracker.incrementSignToEng();
               setState(() {
                 if (lower == "space") {
                   if (sentence.isNotEmpty && !sentence.endsWith(" ")) {

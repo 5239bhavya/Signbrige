@@ -13,7 +13,7 @@ import collections
 import speech_recognition as sr
 import mediapipe as mp
 
-app = FastAPI(title="SignBridge High-Accuracy Self-Contained AI Backend")
+app = FastAPI(title="SignBridge Ultra-High Accuracy AI Server")
 
 app.add_middleware(
     CORSMiddleware,
@@ -32,7 +32,6 @@ if os.path.exists(ISL_GIFS_DIR):
 if os.path.exists(LETTERS_DIR):
     app.mount("/letters", StaticFiles(directory=LETTERS_DIR), name="letters")
 
-# MediaPipe 3D Landmark Detector
 mp_hands = mp.solutions.hands
 hands_detector_mp = mp_hands.Hands(
     static_image_mode=False,
@@ -79,7 +78,6 @@ SYNONYM_MAP = {
 }
 
 def calculate_angle(p1, p2, p3):
-    """Calculates 3D joint bending angle in degrees."""
     v1 = np.array([p1.x - p2.x, p1.y - p2.y, p1.z - p2.z])
     v2 = np.array([p3.x - p2.x, p3.y - p2.y, p3.z - p2.z])
     norm_v1 = np.linalg.norm(v1)
@@ -95,35 +93,28 @@ def classify_high_accuracy_gesture(landmarks_list, landmark_history_seq):
         return None
 
     wrist = landmarks_list[0]
-
-    # 1. Scale-Invariant Normalization relative to Wrist and Bounding Box
     xs = [lm.x for lm in landmarks_list]
     ys = [lm.y for lm in landmarks_list]
     bbox_scale = math.hypot(max(xs) - min(xs), max(ys) - min(ys))
     if bbox_scale == 0:
         bbox_scale = 1.0
 
-    # 2. Joint Bending Angles
     index_angle = calculate_angle(landmarks_list[5], landmarks_list[6], landmarks_list[8])
     middle_angle = calculate_angle(landmarks_list[9], landmarks_list[10], landmarks_list[12])
     ring_angle = calculate_angle(landmarks_list[13], landmarks_list[14], landmarks_list[16])
     pinky_angle = calculate_angle(landmarks_list[17], landmarks_list[18], landmarks_list[20])
 
-    # Extended State Thresholds
-    index_ext = index_angle > 140
-    middle_ext = middle_angle > 140
-    ring_ext = ring_angle > 140
-    pinky_ext = pinky_angle > 140
+    index_ext = index_angle > 130
+    middle_ext = middle_angle > 130
+    ring_ext = ring_angle > 130
+    pinky_ext = pinky_angle > 130
 
     thumb_mcp = landmarks_list[2]
     thumb_tip = landmarks_list[4]
-    thumb_ext = math.hypot(thumb_tip.x - landmarks_list[5].x, thumb_tip.y - landmarks_list[5].y) / bbox_scale > 0.35
+    thumb_ext = math.hypot(thumb_tip.x - landmarks_list[5].x, thumb_tip.y - landmarks_list[5].y) / bbox_scale > 0.28
 
-    # Finger Tip Distances
     t_index_dist = math.hypot(thumb_tip.x - landmarks_list[8].x, thumb_tip.y - landmarks_list[8].y) / bbox_scale
     t_middle_dist = math.hypot(thumb_tip.x - landmarks_list[12].x, thumb_tip.y - landmarks_list[12].y) / bbox_scale
-    t_ring_dist = math.hypot(thumb_tip.x - landmarks_list[16].x, thumb_tip.y - landmarks_list[16].y) / bbox_scale
-    t_pinky_dist = math.hypot(thumb_tip.x - landmarks_list[20].x, thumb_tip.y - landmarks_list[20].y) / bbox_scale
 
     thumb_up = thumb_tip.y < landmarks_list[3].y and thumb_tip.y < landmarks_list[5].y
     thumb_down = thumb_tip.y > landmarks_list[3].y and thumb_tip.y > landmarks_list[5].y
@@ -152,36 +143,45 @@ def classify_high_accuracy_gesture(landmarks_list, landmark_history_seq):
         if pinky_ext and thumb_ext and not index_ext and not middle_ext and not ring_ext:
             return "Call Me"
 
-    # GESTURES & WORD PATTERNS
-    # 1. "I Love You" -> Thumb, Index, Pinky extended
+    # GESTURE EVALUATION ORDER (Strict Priority)
+
+    # 1. "I Love You" (🤟) -> Thumb, Index, Pinky extended; Middle & Ring folded
     if index_ext and pinky_ext and not middle_ext and not ring_ext and thumb_ext:
         return "I Love You"
 
-    # 2. "Victory" -> Index & Middle extended
+    # 2. "Water" (W-Shape) -> Index, Middle, Ring extended; Pinky & Thumb folded
+    if index_ext and middle_ext and ring_ext and not pinky_ext and not thumb_ext:
+        return "Water"
+
+    # 3. "Call Me" (🤙) -> Thumb & Pinky extended; Index, Middle, Ring folded
+    if pinky_ext and thumb_ext and not index_ext and not middle_ext and not ring_ext:
+        return "Call Me"
+
+    # 4. "Victory" (✌️) -> Index & Middle extended; Ring & Pinky folded
     if index_ext and middle_ext and not ring_ext and not pinky_ext:
         return "Victory"
 
-    # 3. "Okay" -> Thumb & Index tips touching, 3 fingers up
+    # 5. "Okay" (👌) -> Thumb & Index tips touching, Middle/Ring/Pinky extended
     if t_index_dist < 0.12 and middle_ext and ring_ext and pinky_ext:
         return "Okay"
 
-    # 4. "Yes" -> Thumbs Up
+    # 6. "Yes" (👍) -> Thumbs Up
     if thumb_up and not index_ext and not middle_ext and not ring_ext and not pinky_ext:
         return "Yes"
 
-    # 5. "No" -> Thumbs Down
+    # 7. "No" (👎) -> Thumbs Down
     if thumb_down and not index_ext and not middle_ext and not ring_ext and not pinky_ext:
         return "No"
 
-    # 6. "Cool" -> Index & Pinky extended
-    if index_ext and pinky_ext and not middle_ext and not ring_ext:
+    # 8. "Cool" (🤘) -> Index & Pinky extended; Thumb, Middle, Ring folded
+    if index_ext and pinky_ext and not middle_ext and not ring_ext and not thumb_ext:
         return "Cool"
 
-    # 7. "Point" -> Index extended
-    if index_ext and not middle_ext and not ring_ext and not pinky_ext:
+    # 9. "Point" (☝️) -> Index extended ONLY
+    if index_ext and not middle_ext and not ring_ext and not pinky_ext and not thumb_ext:
         return "Point"
 
-    # 8. MOTION SEQUENCE ANALYSIS (Across 15 frames)
+    # 10. Motion Sequences (Across 15 frames)
     if len(landmark_history_seq) >= 5:
         first_frame = landmark_history_seq[0]
         last_frame = landmark_history_seq[-1]

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../services/usage_tracker.dart';
 import 'MyBottomNav.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -8,8 +9,8 @@ class ProfilePage extends StatefulWidget {
 
   const ProfilePage({
     super.key,
-    required this.engToSignUsage,
-    required this.signToEngUsage,
+    this.engToSignUsage = 0,
+    this.signToEngUsage = 0,
   });
 
   @override
@@ -42,6 +43,9 @@ class _ProfilePageState extends State<ProfilePage> {
 
   @override
   Widget build(BuildContext context) {
+    final int engCount = widget.engToSignUsage > 0 ? widget.engToSignUsage : UsageTracker.engToSignCount;
+    final int signCount = widget.signToEngUsage > 0 ? widget.signToEngUsage : UsageTracker.signToEngCount;
+
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) {
@@ -49,49 +53,118 @@ class _ProfilePageState extends State<ProfilePage> {
         Navigator.pushReplacementNamed(context, "/home");
       },
       child: Scaffold(
+        backgroundColor: const Color(0xFF0F172A),
         appBar: AppBar(
-          title: const Text("Profile"),
-          backgroundColor: Colors.teal,
+          title: const Text("User Profile"),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          centerTitle: true,
           foregroundColor: Colors.white,
         ),
-        body: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            children: [
-              const CircleAvatar(
-                radius: 50,
-                backgroundImage: AssetImage("assets/profile_placeholder.png"),
-              ),
-              const SizedBox(height: 15),
-              const Text(
-                "Bhavya Patel",
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 5),
-              const Text(
-                "@Bhavyapatel",
-                style: TextStyle(fontSize: 16, color: Colors.grey),
-              ),
-              const SizedBox(height: 30),
-              Card(
-                elevation: 3,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                child: ListTile(
-                  leading: const Icon(Icons.translate, color: Colors.teal),
-                  title: const Text("English → Sign usage"),
-                  trailing: Text("${widget.engToSignUsage} times", style: const TextStyle(fontWeight: FontWeight.bold)),
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.tealAccent, width: 2),
+                  ),
+                  child: const CircleAvatar(
+                    radius: 48,
+                    backgroundImage: AssetImage("assets/profile_placeholder.png"),
+                  ),
                 ),
-              ),
-              Card(
-                elevation: 3,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                child: ListTile(
-                  leading: const Icon(Icons.camera_front, color: Colors.teal),
-                  title: const Text("Sign → English usage"),
-                  trailing: Text("${widget.signToEngUsage} times", style: const TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 15),
+                const Text(
+                  "Bhavya Patel",
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
                 ),
-              ),
-            ],
+                const SizedBox(height: 4),
+                const Text(
+                  "@Bhavyapatel • ISL Communicator",
+                  style: TextStyle(fontSize: 14, color: Colors.tealAccent),
+                ),
+                const SizedBox(height: 30),
+
+                // Statistics Header
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    "Real-Time App Analytics",
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white70),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E293B),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.teal.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.teal.shade900,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.translate, color: Colors.tealAccent),
+                      ),
+                      const SizedBox(width: 16),
+                      const Expanded(
+                        child: Text(
+                          "English → Sign Studio Translations",
+                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
+                        ),
+                      ),
+                      Text(
+                        "$engCount times",
+                        style: const TextStyle(color: Colors.tealAccent, fontWeight: FontWeight.bold, fontSize: 15),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E293B),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.teal.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.teal.shade900,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.camera_front, color: Colors.tealAccent),
+                      ),
+                      const SizedBox(width: 16),
+                      const Expanded(
+                        child: Text(
+                          "Sign → English Camera Scans",
+                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
+                        ),
+                      ),
+                      Text(
+                        "$signCount times",
+                        style: const TextStyle(color: Colors.tealAccent, fontWeight: FontWeight.bold, fontSize: 15),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
         bottomNavigationBar: MyBottomNav(

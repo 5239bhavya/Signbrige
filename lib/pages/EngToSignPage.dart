@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../config/api_config.dart';
+import '../services/usage_tracker.dart';
 import 'MyBottomNav.dart';
 
 class EngToSignPage extends StatefulWidget {
@@ -171,6 +172,7 @@ class _EngToSignPageState extends State<EngToSignPage>
             translatedText = textResult;
             gifUrl = "${ApiConfig.baseUrl}/${data["path"]}";
           });
+          UsageTracker.incrementEngToSign();
           _speakText(textResult);
         } else {
           Fluttertoast.showToast(msg: data["message"] ?? "Translation not found");
@@ -216,6 +218,7 @@ class _EngToSignPageState extends State<EngToSignPage>
             translatedText = textToTranslate;
             gifUrl = "${ApiConfig.baseUrl}/${data["path"]}";
           });
+          UsageTracker.incrementEngToSign();
           _speakText(textToTranslate);
         } else {
           Fluttertoast.showToast(msg: data["message"] ?? "Translation error");
